@@ -1,1231 +1,373 @@
-import customtkinter
-import subprocess
-import threading
-import json
-import os
-import uuid
-import requests
-import platform
-import sys
-import re
-from pathlib import Path
-from tkinter import messagebox, filedialog
-import webbrowser
-from urllib.parse import urlparse
-
-# ====================== 新增：浏览器检测模块 ======================
-class BrowserDetector:
-    """浏览器检测工具类 - 检测广告拦截、浏览器版本、篡改插件"""
-
-    @staticmethod
-    def get_browser_info():
-        """获取系统默认浏览器信息（Windows/macOS）"""
-        browser_info = {
-            "name": "unknown",
-            "version": "0.0.0",
-            "is_modern": False,
-            "path": ""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSL 启动器 - 轻量高效 Minecraft 启动器</title>
+    <link rel="icon" href="logo.ico" type="image/x-icon">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;
         }
 
-        try:
-            if platform.system() == "Windows":
-                # Windows 读取注册表获取默认浏览器
-                import winreg
-                key_path = r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice"
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
-                    prog_id = winreg.QueryValueEx(key, "ProgId")[0]
+        :root {
+            --bg: #0b101a;
+            --card: #121a29;
+            --accent: #4f7cff;
+            --accent-light: #60a5fa;
+            --text: #e9ebef;
+            --sub: #94a3b8;
+            --border: #1e293b;
+            --hover-bg: #182237;
+        }
 
-                # 匹配常见浏览器
-                browser_map = {
-                    "ChromeHTML": "Chrome",
-                    "FirefoxURL": "Firefox",
-                    "EdgeHTML": "Edge",
-                    "OperaHTML": "Opera",
-                    "BraveHTML": "Brave"
-                }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+        }
 
-                for prog, name in browser_map.items():
-                    if prog in prog_id:
-                        browser_info["name"] = name
-                        break
+        nav {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
 
-                # 获取浏览器版本（尝试从安装路径读取）
-                if browser_info["name"] == "Chrome":
-                    chrome_path = r"Software\Google\Chrome\BLBeacon"
-                    try:
-                        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, chrome_path) as key:
-                            browser_info["version"] = winreg.QueryValueEx(key, "version")[0]
-                    except:
-                        pass
-                elif browser_info["name"] == "Edge":
-                    edge_path = r"Software\Microsoft\Edge\BLBeacon"
-                    try:
-                        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, edge_path) as key:
-                            browser_info["version"] = winreg.QueryValueEx(key, "version")[0]
-                    except:
-                        pass
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 600;
+        }
 
-            elif platform.system() == "Darwin":
-                # macOS 检测默认浏览器
-                result = subprocess.check_output(
-                    ["defaults", "read", "com.apple.LaunchServices/com.apple.launchservices.secure", "LSHandlers"],
-                    text=True
-                )
-                if "google chrome" in result.lower():
-                    browser_info["name"] = "Chrome"
-                elif "firefox" in result.lower():
-                    browser_info["name"] = "Firefox"
-                elif "safari" in result.lower():
-                    browser_info["name"] = "Safari"
+        .logo img {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+        }
 
-        except Exception as e:
-            print(f"获取浏览器信息失败: {e}")
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
 
-        # 判断是否为现代浏览器（版本号判断）
-        try:
-            if browser_info["version"] != "0.0.0":
-                # 提取主版本号
-                main_version = int(re.match(r"(\d+)", browser_info["version"]).group(1))
-                # Chrome/Edge >=80, Firefox >=70, Safari >=14 视为现代浏览器
-                if browser_info["name"] in ["Chrome", "Edge"] and main_version >= 80:
-                    browser_info["is_modern"] = True
-                elif browser_info["name"] == "Firefox" and main_version >= 70:
-                    browser_info["is_modern"] = True
-                elif browser_info["name"] == "Safari" and main_version >= 14:
-                    browser_info["is_modern"] = True
-        except:
-            pass
+        .nav-btn {
+            background: var(--card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            position: relative;
+            overflow: hidden;
+        }
 
-        return browser_info
+        .nav-btn:hover {
+            background: var(--hover-bg);
+            border-color: var(--accent-light);
+            color: #fff;
+            box-shadow: 0 0 12px rgba(96, 165, 250, 0.15);
+        }
 
-    @staticmethod
-    def check_ad_blocker(url="https://docs.qq.com/doc/DS093bUNzUEdPSVpF"):
-        """检测广告拦截/页面篡改插件（通过访问指定URL并检测响应）"""
-        try:
-            # 1. 尝试访问目标URL检测响应异常
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        .nav-btn:active {
+            transform: scale(0.98);
+            box-shadow: 0 0 8px rgba(96, 165, 250, 0.2);
+        }
+
+        .nav-btn.primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+            border-color: var(--accent);
+        }
+
+        .nav-btn.primary:hover {
+            background: linear-gradient(135deg, #3b69e6, #4f7cff);
+            box-shadow: 0 0 15px rgba(96, 165, 250, 0.3);
+        }
+
+        .theme-toggle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .theme-toggle:hover {
+            background: var(--hover-bg);
+            border-color: var(--accent-light);
+            box-shadow: 0 0 12px rgba(96, 165, 250, 0.15);
+        }
+
+        .theme-toggle:active {
+            transform: scale(0.95);
+        }
+
+        .hero {
+            max-width: 900px;
+            margin: 60px auto;
+            padding: 0 20px;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 52px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            background: linear-gradient(90deg, #60a5fa, #4f7cff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: var(--sub);
+            max-width: 600px;
+            margin: 0 auto 32px;
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 14px 30px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            border: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn.primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+            color: #fff;
+        }
+
+        .btn.primary:hover {
+            background: linear-gradient(135deg, #3b69e6, #4f7cff);
+            box-shadow: 0 0 15px rgba(96, 165, 250, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .btn.primary:active {
+            transform: translateY(0);
+            box-shadow: 0 0 8px rgba(96, 165, 250, 0.2);
+        }
+
+        .btn.secondary {
+            background: var(--card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn.secondary:hover {
+            background: var(--hover-bg);
+            border-color: var(--accent-light);
+            box-shadow: 0 0 12px rgba(96, 165, 250, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .btn.secondary:active {
+            transform: translateY(0);
+            box-shadow: 0 0 8px rgba(96, 165, 250, 0.1);
+        }
+
+        .features {
+            max-width: 1100px;
+            margin: 80px auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 28px;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent-light);
+            box-shadow: 0 8px 20px rgba(96, 165, 250, 0.1);
+        }
+
+        .card h3 {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .card p {
+            color: var(--sub);
+            font-size: 14px;
+        }
+
+        footer {
+            max-width: 1100px;
+            margin: 60px auto 30px;
+            padding: 20px;
+            text-align: center;
+            color: var(--sub);
+            font-size: 14px;
+            border-top: 1px solid var(--border);
+        }
+
+        footer a {
+            color: var(--accent-light);
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        footer a:hover {
+            color: #82b1ff;
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 36px;
             }
-            response = requests.get(url, headers=headers, timeout=10)
-
-            # 2. 检测响应异常（广告拦截可能导致的特征）
-            block_signatures = [
-                "adblock",
-                "ad-block",
-                "广告拦截",
-                "无法访问",
-                "页面被修改",
-                "tampered",
-                "blocked"
-            ]
-
-            # 检测响应内容中是否有拦截特征
-            content = response.text.lower()
-            for sig in block_signatures:
-                if sig in content:
-                    return True
-
-            # 3. 检测响应状态码异常
-            if response.status_code not in [200, 301, 302]:
-                return True
-
-            # 4. 检测页面完整性（简单长度检测）
-            if len(response.content) < 1000:  # 正常页面远大于1000字节
-                return True
-
-            return False
-
-        except Exception as e:
-            print(f"广告拦截检测失败: {e}")
-            return False  # 网络错误不判定为拦截
-
-    @staticmethod
-    def show_ad_block_warning(parent):
-        """显示广告拦截插件警告窗口"""
-        warn_window = customtkinter.CTkToplevel(parent)
-        warn_window.title("检测到插件干扰")
-        warn_window.geometry("500x300")
-        warn_window.resizable(False, False)
-        warn_window.grab_set()  # 模态窗口
-
-        # 图标和标题
-        icon_frame = customtkinter.CTkFrame(warn_window, fg_color="#e74c3c")
-        icon_frame.pack(fill="x", pady=(0, 20))
-        customtkinter.CTkLabel(
-            icon_frame, text="⚠️ 检测到浏览器插件干扰",
-            font=("微软雅黑", 16, "bold"), text_color="white"
-        ).pack(pady=10)
-
-        # 提示内容
-        content_frame = customtkinter.CTkFrame(warn_window)
-        content_frame.pack(fill="both", expand=True, padx=20)
-
-        customtkinter.CTkLabel(
-            content_frame,
-            text="""检测到您的浏览器安装了广告拦截、页面篡改类插件，
-这会导致MSL启动器的网页功能（使用文档、Mod市场等）无法正常显示。
-
-请执行以下操作：
-1. 关闭AdBlock、uBlock Origin等广告拦截插件
-2. 禁用任何页面篡改/脚本拦截插件
-3. 刷新页面或重启浏览器
-
-如果不关闭插件，您可能无法正常使用启动器的网页相关功能！""",
-            font=("微软雅黑", 12), justify="left"
-        ).pack(pady=20, padx=10)
-
-        # 按钮
-        btn_frame = customtkinter.CTkFrame(warn_window)
-        btn_frame.pack(fill="x", padx=20, pady=10)
-
-        customtkinter.CTkButton(
-            btn_frame, text="我已关闭插件", font=("微软雅黑", 12, "bold"),
-            command=warn_window.destroy
-        ).pack(side="left", padx=5, fill="x", expand=True)
-
-        customtkinter.CTkButton(
-            btn_frame, text="了解更多", font=("微软雅黑", 12),
-            fg_color="#3498db", hover_color="#2980b9",
-            command=lambda: webbrowser.open("https://www.msl-launcher.com/help/adblock")
-        ).pack(side="right", padx=5, fill="x", expand=True)
-
-        warn_window.mainloop()
-
-    @staticmethod
-    def show_old_browser_warning(parent, browser_info):
-        """显示老旧浏览器警告窗口"""
-        warn_window = customtkinter.CTkToplevel(parent)
-        warn_window.title("浏览器版本过低")
-        warn_window.geometry("500x350")
-        warn_window.resizable(False, False)
-        warn_window.grab_set()
-
-        # 标题
-        header = customtkinter.CTkFrame(warn_window, fg_color="#f39c12")
-        header.pack(fill="x", pady=(0, 20))
-        customtkinter.CTkLabel(
-            header, text="⚠️ 浏览器版本过低",
-            font=("微软雅黑", 16, "bold"), text_color="white"
-        ).pack(pady=10)
-
-        # 内容
-        content = customtkinter.CTkFrame(warn_window)
-        content.pack(fill="both", expand=True, padx=20)
-
-        customtkinter.CTkLabel(
-            content,
-            text=f"""检测到您正在使用 {browser_info['name']} {browser_info['version']}
-该浏览器版本过旧，无法正常显示MSL启动器的网页内容。
-
-为了获得最佳体验，请下载最新版本的浏览器：
-• Google Chrome（推荐）
-• Microsoft Edge
-• Mozilla Firefox""",
-            font=("微软雅黑", 12), justify="left"
-        ).pack(pady=20, padx=10)
-
-        # 下载按钮
-        btn_frame = customtkinter.CTkFrame(warn_window)
-        btn_frame.pack(fill="x", padx=20, pady=10)
-
-        customtkinter.CTkButton(
-            btn_frame, text="下载Chrome", font=("微软雅黑", 12, "bold"),
-            fg_color="#4285f4", hover_color="#3367d6",
-            command=lambda: webbrowser.open("https://www.google.com/chrome/")
-        ).pack(side="left", padx=5, fill="x", expand=True)
-
-        customtkinter.CTkButton(
-            btn_frame, text="下载Edge", font=("微软雅黑", 12, "bold"),
-            fg_color="#0078d7", hover_color="#005a9e",
-            command=lambda: webbrowser.open("https://www.microsoft.com/zh-cn/edge")
-        ).pack(side="right", padx=5, fill="x", expand=True)
-
-        warn_window.mainloop()
-
-# ====================== 全局常量 ======================
-APP_NAME = "MSL 我的世界启动器"
-APP_VERSION = "1.0.0"
-APP_AUTHOR = "MSL Launcher Team"
-MODRINTH_API = "https://api.modrinth.com/v2/"
-MINECRAFT_VERSION_MANIFEST = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
-CHUNK_SIZE = 8192
-GLOBAL_CONFIG_PATH = Path(__file__).parent / "msl_global.json"
-
-# ====================== 统一字体 ======================
-FONT_NORMAL = ("微软雅黑", 12)
-FONT_BOLD = ("微软雅黑", 12, "bold")
-FONT_TITLE = ("微软雅黑", 20, "bold")
-FONT_SMALL = ("微软雅黑", 10)
-FONT_ABOUT = ("微软雅黑", 11)
-
-# ====================== 全局配置 ======================
-class GlobalConfig:
-    @staticmethod
-    def load():
-        default = {
-            "last_install_dir": str(Path.home() / ".msl_launcher"),
-            "memory": 4096,
-            "java_path": "",
-            "username": "Player"
+            .nav-actions .nav-btn span {
+                display: none;
+            }
+            .nav-actions .nav-btn {
+                padding: 8px;
+            }
         }
-        if GLOBAL_CONFIG_PATH.exists():
-            try:
-                with open(GLOBAL_CONFIG_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                for k, v in default.items():
-                    data.setdefault(k, v)
-                return data
-            except Exception as e:
-                print(f"加载配置失败: {e}")
-        return default
-
-    @staticmethod
-    def save(data):
-        try:
-            with open(GLOBAL_CONFIG_PATH, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
-        except Exception as e:
-            messagebox.showerror("错误", f"保存配置失败: {e}")
-
-# ====================== 版本工具类 ======================
-class VersionUtils:
-    @staticmethod
-    def get_minecraft_versions():
-        """获取官方版本列表（用于安装）"""
-        try:
-            response = requests.get(MINECRAFT_VERSION_MANIFEST, timeout=10)
-            if response.status_code == 200:
-                manifest = response.json()
-                versions = []
-                for version in manifest.get("versions", []):
-                    versions.append({
-                        "id": version["id"],
-                        "type": version["type"]
-                    })
-                return versions
-        except Exception as e:
-            print(f"获取版本列表失败: {e}")
-            # 返回常用版本兜底
-            return [
-                {"id": "1.21", "type": "release"},
-                {"id": "1.20.6", "type": "release"},
-                {"id": "1.20.1", "type": "release"},
-                {"id": "1.19.4", "type": "release"}
-            ]
-
-    @staticmethod
-    def get_installed_versions(install_dir):
-        """获取本地已安装的版本"""
-        installed_versions = []
-        versions_dir = Path(install_dir) / "versions"
-
-        if not versions_dir.exists():
-            return installed_versions
-
-        # 遍历versions目录，检查每个版本是否完整
-        for version_folder in versions_dir.iterdir():
-            if version_folder.is_dir():
-                json_file = version_folder / f"{version_folder.name}.json"
-                jar_file = version_folder / f"{version_folder.name}.jar"
-
-                if json_file.exists() and jar_file.exists():
-                    installed_versions.append(version_folder.name)
-
-        return installed_versions
-
-    @staticmethod
-    def install_minecraft_version(version_id, install_dir):
-        """安装版本核心逻辑"""
-        try:
-            import minecraft_launcher_lib as mcl
-            mcl.install.install_minecraft_version(version_id, install_dir)
-            return True
-        except Exception as e:
-            print(f"安装版本失败: {e}")
-            return False
-
-# ====================== 欢迎配置界面 ======================
-class WelcomeWindow(customtkinter.CTk):
-    def __init__(self):
-        super().__init__()
-        self.title(f"{APP_NAME} - 首次配置")
-        self.geometry("600x400")
-        self.resizable(False, False)
-        customtkinter.set_appearance_mode("dark")
-        customtkinter.set_default_color_theme("blue")
-
-        self.config_data = GlobalConfig.load()
-        self.dir_entry = None
-        self.mem_entry = None
-        self.name_entry = None
-        self.java_entry = None
-
-        # 初始化时执行浏览器检测
-        self.check_browser_environment()
-
-        self.create_widgets()
-
-    def check_browser_environment(self):
-        """检测浏览器环境（异步执行，不阻塞UI）"""
-        def check_task():
-            # 1. 检测浏览器版本
-            browser_info = BrowserDetector.get_browser_info()
-            if not browser_info["is_modern"] and browser_info["name"] != "unknown":
-                self.after(0, lambda: BrowserDetector.show_old_browser_warning(self, browser_info))
-
-            # 2. 检测广告拦截插件
-            if BrowserDetector.check_ad_blocker():
-                self.after(0, lambda: BrowserDetector.show_ad_block_warning(self))
-
-        threading.Thread(target=check_task, daemon=True).start()
-
-    def create_widgets(self):
-        main = customtkinter.CTkFrame(self)
-        main.pack(fill="both", expand=True, padx=20, pady=20)
-
-        customtkinter.CTkLabel(main, text="欢迎使用 MSL 启动器", font=FONT_TITLE).pack(pady=15)
-        customtkinter.CTkLabel(main, text="首次启动请完成基础配置", font=FONT_NORMAL).pack(pady=5)
-
-        # 安装目录
-        f1 = customtkinter.CTkFrame(main)
-        f1.pack(fill="x", padx=15, pady=8)
-        customtkinter.CTkLabel(f1, text="游戏安装目录", font=FONT_NORMAL).pack(side="left", padx=8)
-        self.dir_entry = customtkinter.CTkEntry(f1, font=FONT_NORMAL)
-        self.dir_entry.pack(side="left", fill="x", expand=True, padx=5)
-        self.dir_entry.insert(0, self.config_data["last_install_dir"])
-        customtkinter.CTkButton(f1, text="浏览", width=60, font=FONT_NORMAL, command=self.choose_dir).pack(side="right",
-                                                                                                           padx=5)
-
-        # 内存设置
-        f2 = customtkinter.CTkFrame(main)
-        f2.pack(fill="x", padx=15, pady=8)
-        customtkinter.CTkLabel(f2, text="最大内存(MB)", font=FONT_NORMAL).pack(side="left", padx=8)
-        self.mem_entry = customtkinter.CTkEntry(f2, font=FONT_NORMAL, width=80)
-        self.mem_entry.pack(side="left", padx=5)
-        self.mem_entry.insert(0, str(self.config_data["memory"]))
-
-        # 玩家名称
-        f3 = customtkinter.CTkFrame(main)
-        f3.pack(fill="x", padx=15, pady=8)
-        customtkinter.CTkLabel(f3, text="玩家名称", font=FONT_NORMAL).pack(side="left", padx=8)
-        self.name_entry = customtkinter.CTkEntry(f3, font=FONT_NORMAL)
-        self.name_entry.pack(side="left", fill="x", expand=True, padx=5)
-        self.name_entry.insert(0, self.config_data["username"])
-
-        # Java路径
-        f4 = customtkinter.CTkFrame(main)
-        f4.pack(fill="x", padx=15, pady=8)
-        customtkinter.CTkLabel(f4, text="Java路径（可选）", font=FONT_NORMAL).pack(side="left", padx=8)
-        self.java_entry = customtkinter.CTkEntry(f4, font=FONT_NORMAL)
-        self.java_entry.pack(side="left", fill="x", expand=True, padx=5)
-        self.java_entry.insert(0, self.config_data["java_path"])
-        customtkinter.CTkButton(f4, text="...", width=40, font=FONT_NORMAL, command=self.choose_java).pack(side="right",
-                                                                                                           padx=5)
-
-        # 确认按钮
-        customtkinter.CTkButton(
-            main, text="保存并进入启动器", height=40, font=FONT_BOLD,
-            command=self.save_and_go
-        ).pack(fill="x", padx=20, pady=20)
-
-    def choose_dir(self):
-        d = filedialog.askdirectory(title="选择游戏安装目录")
-        if d:
-            self.dir_entry.delete(0, "end")
-            self.dir_entry.insert(0, d)
-
-    def choose_java(self):
-        p = filedialog.askopenfilename(filetypes=[("Java可执行文件", "java.exe"), ("所有文件", "*.*")])
-        if p:
-            self.java_entry.delete(0, "end")
-            self.java_entry.insert(0, p)
-
-    def save_and_go(self):
-        try:
-            mem = int(self.mem_entry.get())
-            if mem < 512:
-                messagebox.showerror("错误", "内存不能小于512MB")
-                return
-        except ValueError:
-            messagebox.showerror("错误", "内存必须是数字")
-            return
-
-        name = self.name_entry.get().strip()
-        if not name:
-            messagebox.showerror("错误", "请输入玩家名")
-            return
-
-        install_dir = self.dir_entry.get().strip()
-        if not install_dir:
-            messagebox.showerror("错误", "请选择安装目录")
-            return
-
-        # 保存配置
-        self.config_data["last_install_dir"] = install_dir
-        self.config_data["memory"] = mem
-        self.config_data["java_path"] = self.java_entry.get().strip()
-        self.config_data["username"] = name
-        GlobalConfig.save(self.config_data)
-
-        # 进入主界面
-        self.destroy()
-        MainWindow(install_dir, self.config_data).mainloop()
-
-# ====================== 主界面（修复所有报错） ======================
-class MainWindow(customtkinter.CTk):
-    def __init__(self, root_dir, global_cfg):
-        super().__init__()
-        self.title(APP_NAME)
-        self.geometry("800x600")
-        customtkinter.set_appearance_mode("dark")
-        customtkinter.set_default_color_theme("blue")
-
-        self.root_path = Path(root_dir)
-        self.global_cfg = global_cfg
-        self.is_running = False
-
-        # 核心控件初始化
-        self.ver_var = customtkinter.StringVar()
-        self.launch_btn = None
-        self.mem_edit = None
-        self.java_edit = None
-        self.username_edit = None
-        self.ver_menu = None
-        self.install_ver_var = customtkinter.StringVar()
-        self.install_ver_menu = None
-
-        # 布局初始化
-        self._setup_layout()
-
-        # 异步加载数据
-        self._load_installed_versions_async()
-        self._load_all_versions_async()
-
-    def _setup_layout(self):
-        # 主框架
-        main_frame = customtkinter.CTkFrame(self)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # 三个选项卡：启动 + 下载 + 设置
-        self.left_tabview = customtkinter.CTkTabview(main_frame, width=780)
-        self.left_tabview.pack(fill="both", expand=True, padx=5, pady=5)
-        self.left_tabview.add("启动")
-        self.left_tabview.add("下载")
-        self.left_tabview.add("设置")
-
-        # 构建选项卡内容
-        self._build_launch_tab()  # 启动选项卡
-        self._build_download_tab()  # 下载选项卡
-        self._build_setting_tab()  # 设置选项卡
-
-    # ---------------------- 启动选项卡 ----------------------
-    def _build_launch_tab(self):
-        tab = self.left_tabview.tab("启动")
-
-        # 标题
-        customtkinter.CTkLabel(tab, text="游戏启动", font=FONT_TITLE).pack(pady=15)
-
-        # 版本选择
-        ver_frame = customtkinter.CTkFrame(tab)
-        ver_frame.pack(fill="x", padx=20, pady=10)
-        customtkinter.CTkLabel(ver_frame, text="已安装版本", font=FONT_NORMAL).pack(side="left", padx=10)
-        self.ver_menu = customtkinter.CTkOptionMenu(ver_frame, variable=self.ver_var, font=FONT_NORMAL)
-        self.ver_menu.pack(side="left", fill="x", expand=True, padx=5)
-        customtkinter.CTkButton(ver_frame, text="刷新列表", width=100, font=FONT_NORMAL,
-                                command=self._load_installed_versions_async).pack(side="right", padx=5)
-
-        # 快捷目录按钮
-        dir_frame = customtkinter.CTkFrame(tab)
-        dir_frame.pack(fill="x", padx=20, pady=10)
-        customtkinter.CTkButton(dir_frame, text="打开游戏目录", font=FONT_NORMAL, command=self.open_game_dir).pack(
-            side="left", padx=5, fill="x", expand=True)
-        customtkinter.CTkButton(dir_frame, text="打开Mod目录", font=FONT_NORMAL, command=self.open_mod_dir).pack(
-            side="right", padx=5, fill="x", expand=True)
-
-        # 添加使用文档按钮（带浏览器检测）
-        doc_frame = customtkinter.CTkFrame(tab)
-        doc_frame.pack(fill="x", padx=20, pady=10)
-        customtkinter.CTkButton(
-            doc_frame, text="打开使用文档", font=FONT_NORMAL,
-            command=self.open_help_document
-        ).pack(fill="x", padx=5, pady=5)
-
-        # 基础设置区域
-        quick_set_frame = customtkinter.CTkFrame(tab)
-        quick_set_frame.pack(fill="x", padx=20, pady=10)
-
-        customtkinter.CTkLabel(quick_set_frame, text="快速设置（完整设置请至设置选项卡）",
-                               font=FONT_SMALL, text_color="#aaaaaa").pack(pady=5)
-
-        # 内存快速设置
-        mem_frame = customtkinter.CTkFrame(quick_set_frame)
-        mem_frame.pack(fill="x", padx=10, pady=5)
-        customtkinter.CTkLabel(mem_frame, text="最大内存(MB)", font=FONT_NORMAL).pack(side="left", padx=10)
-        self.quick_mem_edit = customtkinter.CTkEntry(mem_frame, font=FONT_NORMAL, width=80)
-        self.quick_mem_edit.pack(side="left", padx=5)
-        self.quick_mem_edit.insert(0, str(self.global_cfg["memory"]))
-
-        # 快速保存按钮
-        customtkinter.CTkButton(
-            quick_set_frame, text="保存快速设置", font=FONT_NORMAL, height=30,
-            command=self.save_quick_settings
-        ).pack(fill="x", padx=10, pady=8)
-
-        # 启动按钮（核心）
-        self.launch_btn = customtkinter.CTkButton(
-            tab, text="启动游戏", height=50, font=FONT_BOLD,
-            fg_color="#2ecc71", hover_color="#27ae60",
-            command=self.start_game
-        )
-        self.launch_btn.pack(fill="x", padx=20, pady=20)
-
-    def open_help_document(self):
-        """打开使用文档（带前置浏览器检测）"""
-        def check_and_open():
-            # 1. 先检测广告拦截
-            if BrowserDetector.check_ad_blocker("https://docs.qq.com/doc/DS093bUNzUEdPSVpF"):
-                self.after(0, lambda: BrowserDetector.show_ad_block_warning(self))
-                return
-
-            # 2. 检测浏览器版本
-            browser_info = BrowserDetector.get_browser_info()
-            if not browser_info["is_modern"] and browser_info["name"] != "unknown":
-                self.after(0, lambda: BrowserDetector.show_old_browser_warning(self, browser_info))
-                return
-
-            # 3. 打开文档
-            self.after(0, lambda: webbrowser.open("https://docs.qq.com/doc/DS093bUNzUEdPSVpF"))
-
-        threading.Thread(target=check_and_open, daemon=True).start()
-
-    # ---------------------- 下载选项卡 ----------------------
-    def _build_download_tab(self):
-        tab = self.left_tabview.tab("下载")
-
-        # 标题
-        customtkinter.CTkLabel(tab, text="游戏下载", font=FONT_TITLE).pack(pady=15)
-
-        # 版本选择（用于安装）
-        install_ver_frame = customtkinter.CTkFrame(tab)
-        install_ver_frame.pack(fill="x", padx=20, pady=10)
-        customtkinter.CTkLabel(install_ver_frame, text="选择要安装的版本", font=FONT_NORMAL).pack(side="left", padx=10)
-        self.install_ver_menu = customtkinter.CTkOptionMenu(install_ver_frame, variable=self.install_ver_var,
-                                                            font=FONT_NORMAL)
-        self.install_ver_menu.pack(side="left", fill="x", expand=True, padx=5)
-        customtkinter.CTkButton(install_ver_frame, text="刷新官方版本", width=100, font=FONT_NORMAL,
-                                command=self._load_all_versions_async).pack(side="right", padx=5)
-
-        # 原版安装
-        customtkinter.CTkButton(
-            tab, text="安装选中版本", font=FONT_NORMAL, height=35,
-            command=self.install_vanilla
-        ).pack(fill="x", padx=20, pady=8)
-
-        # 模组加载器安装
-        loader_frame = customtkinter.CTkFrame(tab)
-        loader_frame.pack(fill="x", padx=20, pady=8)
-        customtkinter.CTkButton(loader_frame, text="安装Fabric", font=FONT_NORMAL, height=35,
-                                command=lambda: self.install_loader("fabric")).pack(side="left", padx=5, fill="x",
-                                                                                    expand=True)
-        customtkinter.CTkButton(loader_frame, text="安装Forge", font=FONT_NORMAL, height=35,
-                                command=lambda: self.install_loader("forge")).pack(side="right", padx=5, fill="x",
-                                                                                   expand=True)
-
-        # Mod市场
-        customtkinter.CTkButton(
-            tab, text="打开Mod市场", font=FONT_NORMAL, height=35,
-            command=self.open_mod_market
-        ).pack(fill="x", padx=20, pady=8)
-
-    # ---------------------- 设置选项卡 ----------------------
-    def _build_setting_tab(self):
-        tab = self.left_tabview.tab("设置")
-
-        # 滚动容器
-        scroll_frame = customtkinter.CTkScrollableFrame(tab)
-        scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
-
-        # ========== 系统设置 ==========
-        sys_frame = customtkinter.CTkFrame(scroll_frame)
-        sys_frame.pack(fill="x", padx=20, pady=10)
-
-        # 系统设置标题
-        customtkinter.CTkLabel(sys_frame, text="系统设置", font=FONT_TITLE).pack(pady=10)
-
-        # 安装目录
-        dir_frame = customtkinter.CTkFrame(sys_frame)
-        dir_frame.pack(fill="x", padx=20, pady=8)
-        customtkinter.CTkLabel(dir_frame, text="安装目录", font=FONT_NORMAL).pack(side="left", padx=10)
-        dir_text = str(self.root_path)[:25] + "..." if len(str(self.root_path)) > 25 else str(self.root_path)
-        dir_label = customtkinter.CTkLabel(dir_frame, text=dir_text,
-                                           font=FONT_SMALL, text_color="#aaa")
-        dir_label.pack(side="left", padx=5)
-        customtkinter.CTkButton(dir_frame, text="修改", width=60, font=FONT_NORMAL,
-                                command=self.change_install_dir).pack(side="right", padx=5)
-
-        # 内存设置
-        mem_frame = customtkinter.CTkFrame(sys_frame)
-        mem_frame.pack(fill="x", padx=20, pady=8)
-        customtkinter.CTkLabel(mem_frame, text="最大内存(MB)", font=FONT_NORMAL).pack(side="left", padx=10)
-        self.mem_edit = customtkinter.CTkEntry(mem_frame, font=FONT_NORMAL, width=80)
-        self.mem_edit.pack(side="left", padx=5)
-        self.mem_edit.insert(0, str(self.global_cfg["memory"]))
-
-        # Java路径
-        java_frame = customtkinter.CTkFrame(sys_frame)
-        java_frame.pack(fill="x", padx=20, pady=8)
-        customtkinter.CTkLabel(java_frame, text="Java路径", font=FONT_NORMAL).pack(side="left", padx=10)
-        self.java_edit = customtkinter.CTkEntry(java_frame, font=FONT_NORMAL)
-        self.java_edit.pack(side="left", fill="x", expand=True, padx=5)
-        self.java_edit.insert(0, self.global_cfg["java_path"])
-        customtkinter.CTkButton(java_frame, text="浏览", width=60, font=FONT_NORMAL,
-                                command=self.choose_java).pack(side="right", padx=5)
-
-        # 玩家名称
-        name_frame = customtkinter.CTkFrame(sys_frame)
-        name_frame.pack(fill="x", padx=20, pady=8)
-        customtkinter.CTkLabel(name_frame, text="玩家名称", font=FONT_NORMAL).pack(side="left", padx=10)
-        self.username_edit = customtkinter.CTkEntry(name_frame, font=FONT_NORMAL)
-        self.username_edit.pack(side="left", fill="x", expand=True, padx=5)
-        self.username_edit.insert(0, self.global_cfg["username"])
-
-        # 保存按钮
-        customtkinter.CTkButton(
-            sys_frame, text="保存系统设置", font=FONT_BOLD, height=40,
-            command=self.save_all_settings
-        ).pack(fill="x", padx=20, pady=15)
-
-        # ========== 关于模块 ==========
-        about_frame = customtkinter.CTkFrame(scroll_frame)
-        about_frame.pack(fill="x", padx=20, pady=10)
-
-        # 关于标题
-        customtkinter.CTkLabel(about_frame, text="关于", font=FONT_TITLE).pack(pady=10)
-
-        # 关于内容
-        about_content_frame = customtkinter.CTkFrame(about_frame, fg_color="transparent")
-        about_content_frame.pack(fill="x", padx=20, pady=10)
-
-        # 系统信息
-        system_info = self.get_system_info()
-
-        # 添加浏览器信息
-        browser_info = BrowserDetector.get_browser_info()
-        system_info["browser"] = f"{browser_info['name']} {browser_info['version']}"
-
-        # 关于信息
-        about_info = [
-            ("启动器名称", APP_NAME),
-            ("版本号", APP_VERSION),
-            ("开发者", APP_AUTHOR),
-            ("运行环境", system_info["python_version"]),
-            ("操作系统", system_info["os_info"]),
-            ("架构", system_info["architecture"]),
-            ("默认浏览器", system_info["browser"]),
-            ("数据目录", str(GLOBAL_CONFIG_PATH.parent))
-        ]
-
-        for label, value in about_info:
-            row_frame = customtkinter.CTkFrame(about_content_frame, fg_color="transparent")
-            row_frame.pack(fill="x", pady=4)
-
-            customtkinter.CTkLabel(
-                row_frame, text=f"{label}:", font=FONT_ABOUT,
-                text_color="#4fc3f7", width=100
-            ).pack(side="left", anchor="w")
-
-            customtkinter.CTkLabel(
-                row_frame, text=value, font=FONT_ABOUT,
-                wraplength=500, justify="left"
-            ).pack(side="left", anchor="w", padx=10)
-
-        # 关于按钮组
-        btn_frame = customtkinter.CTkFrame(about_frame, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=10)
-
-        customtkinter.CTkButton(
-            btn_frame, text="检查更新", font=FONT_NORMAL, width=120,
-            command=self.check_update
-        ).pack(side="left", padx=5)
-
-        customtkinter.CTkButton(
-            btn_frame, text="清理缓存", font=FONT_NORMAL, width=120,
-            command=self.clear_cache
-        ).pack(side="left", padx=5)
-
-        customtkinter.CTkButton(
-            btn_frame, text="检测浏览器", font=FONT_NORMAL, width=120,
-            command=self.check_browser_now
-        ).pack(side="left", padx=5)
-
-        customtkinter.CTkButton(
-            btn_frame, text="关于Minecraft", font=FONT_NORMAL, width=120,
-            command=self.about_minecraft
-        ).pack(side="left", padx=5)
-
-    def check_browser_now(self):
-        """手动触发浏览器检测"""
-        def check_task():
-            # 1. 检测广告拦截
-            if BrowserDetector.check_ad_blocker():
-                self.after(0, lambda: BrowserDetector.show_ad_block_warning(self))
-
-            # 2. 检测浏览器版本
-            browser_info = BrowserDetector.get_browser_info()
-            if not browser_info["is_modern"] and browser_info["name"] != "unknown":
-                self.after(0, lambda: BrowserDetector.show_old_browser_warning(self, browser_info))
-            else:
-                self.after(0, lambda: messagebox.showinfo("检测完成", "您的浏览器环境正常！"))
-
-        threading.Thread(target=check_task, daemon=True).start()
-
-    # ====================== 关于模块方法 ======================
-    @staticmethod
-    def get_system_info():
-        """获取系统信息"""
-        return {
-            "python_version": f"Python {sys.version.split()[0]}",
-            "os_info": platform.platform(),
-            "architecture": platform.architecture()[0]
+    </style>
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+
+<nav>
+    <div class="logo">
+        <img src="logo.ico" alt="MSL启动器LOGO">
+        MSL 启动器
+    </div>
+
+    <div class="nav-actions">
+        <button class="theme-toggle" id="themeToggle">
+            <i class="fas fa-moon"></i>
+        </button>
+
+        <a href="https://qm.qq.com/q/isgKpcc1A4" target="_blank" class="nav-btn">
+            <i class="fab fa-qq"></i>
+            <span>QQ群</span>
+        </a>
+
+        <a href="https://space.bilibili.com/3493083373111319" target="_blank" class="nav-btn">
+            <i class="fab fa-bilibili"></i>
+            <span>B站</span>
+        </a>
+
+        <a href="https://www.123865.com/s/5cUfvd-N4Yk" target="_blank" class="nav-btn primary">
+            <i class="fas fa-download"></i>
+            <span>下载</span>
+        </a>
+    </div>
+</nav>
+
+<div class="hero" id="home">
+    <h1>MSL Launcher</h1>
+    <p>轻量、免费、开源、无广告的 Minecraft 第三方启动器，低配电脑也能流畅运行。</p>
+    <div class="buttons" id="download">
+        <a href="https://www.123865.com/s/5cUfvd-N4Yk" target="_blank" class="btn primary">立即下载</a>
+        <a href="https://docs.qq.com/doc/DS093bUNzUEdPSVpF" target="_blank" class="btn secondary">使用文档</a>
+    </div>
+</div>
+
+<div class="features" id="features">
+    <div class="card">
+        <h3>🎮 一键安装游戏</h3>
+        <p>自动下载 Minecraft 官方版本，无需手动配置，新手也能轻松使用。</p>
+    </div>
+    <div class="card">
+        <h3>⚙️ 自动配置 Java</h3>
+        <p>智能检测并配置 Java 环境，解决版本不兼容、内存设置错误等问题。</p>
+    </div>
+    <div class="card">
+        <h3>🧩 模组一键安装</h3>
+        <p>支持 Forge / Fabric 加载器，内置 Mod 市场，一键下载安装。</p>
+    </div>
+    <div class="card">
+        <h3>🎨 简洁现代化界面</h3>
+        <p>纯深色优雅界面，无广告、无捆绑、启动快、占用低。</p>
+    </div>
+    <div class="card">
+        <h3>🔒 安全开源</h3>
+        <p>代码完全公开透明，不收集隐私，不篡改游戏文件。</p>
+    </div>
+    <div class="card">
+        <h3>📶 低配流畅</h3>
+        <p>10 年前的电脑也能流畅运行，资源占用极低。</p>
+    </div>
+</div>
+
+<footer id="about">
+    <p>QQ群：<a href="https://qm.qq.com/q/isgKpcc1A4" target="_blank">加入交流</a> | B站：<a href="https://space.bilibili.com/3493083373111319" target="_blank">关注我们</a></p>
+    <br>
+    MSL 启动器 © 2026 | 开源免费 | 纯个人开发
+    <br>
+    本软件仅用于学习交流，Minecraft 归属 Mojang Studios
+</footer>
+
+<script>
+    const themeToggle = document.getElementById('themeToggle');
+    const html = document.documentElement;
+
+    themeToggle.addEventListener('click', () => {
+        if (html.style.getPropertyValue('--bg') === '#ffffff') {
+            html.style.setProperty('--bg', '#0b101a');
+            html.style.setProperty('--card', '#121a29');
+            html.style.setProperty('--hover-bg', '#182237');
+            html.style.setProperty('--text', '#e9ebef');
+            html.style.setProperty('--sub', '#94a3b8');
+            html.style.setProperty('--border', '#1e293b');
+            themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+        } else {
+            html.style.setProperty('--bg', '#ffffff');
+            html.style.setProperty('--card', '#f8f9fa');
+            html.style.setProperty('--hover-bg', '#e9ecef');
+            html.style.setProperty('--text', '#212529');
+            html.style.setProperty('--sub', '#6c757d');
+            html.style.setProperty('--border', '#dee2e6');
+            themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
         }
-
-    @staticmethod
-    def check_update():
-        """检查更新"""
-        messagebox.showinfo("检查更新", f"{APP_NAME} v{APP_VERSION}\n当前已是最新版本！")
-
-    @staticmethod
-    def clear_cache():
-        """清理缓存"""
-        if messagebox.askyesno("确认", "是否确定清理启动器缓存？\n此操作不会删除游戏文件。"):
-            messagebox.showinfo("成功", "缓存已清理完成！")
-
-    @staticmethod
-    def about_minecraft():
-        """关于Minecraft"""
-        minecraft_info = """
-Minecraft (我的世界)
-官方网站: https://www.minecraft.net/
-版本协议: Mojang Studios © Microsoft
-启动器仅提供游戏启动功能，不包含游戏本体。
-请支持正版Minecraft！
-        """
-        messagebox.showinfo("对于Minecraft的说明", minecraft_info)
-
-    # ====================== 版本加载相关 ======================
-    def _load_installed_versions_async(self):
-        """异步加载本地已安装的版本"""
-
-        def load_task():
-            installed_versions = VersionUtils.get_installed_versions(str(self.root_path))
-
-            if installed_versions:
-                self.after(0, lambda: self.ver_menu.configure(values=installed_versions))
-                self.after(0, lambda: self.ver_var.set(installed_versions[0]))
-                self.after(0, lambda: self.launch_btn.configure(state="normal", text="启动游戏"))
-            else:
-                self.after(0, lambda: self.ver_menu.configure(values=["暂无已安装版本"]))
-                self.after(0, lambda: self.ver_var.set("暂无已安装版本"))
-                self.after(0, lambda: self.launch_btn.configure(state="disabled", text="请先安装版本"))
-
-        threading.Thread(target=load_task, daemon=True).start()
-
-    def _load_all_versions_async(self):
-        """加载全量官方版本"""
-
-        def load_task():
-            versions = VersionUtils.get_minecraft_versions()
-            version_ids = [v["id"] for v in versions[:30]]
-
-            if version_ids:
-                self.after(0, lambda: self.install_ver_menu.configure(values=version_ids))
-                self.after(0, lambda: self.install_ver_var.set(version_ids[0]))
-            else:
-                self.after(0, lambda: self.install_ver_menu.configure(values=["1.21", "1.20.6", "1.20.1"]))
-                self.after(0, lambda: self.install_ver_var.set("1.21"))
-
-        threading.Thread(target=load_task, daemon=True).start()
-
-    # ====================== 核心功能实现 ======================
-    def install_vanilla(self):
-        """安装原版游戏"""
-        selected_version = self.install_ver_var.get()
-        if not selected_version:
-            messagebox.showwarning("提示", "请先选择要安装的版本")
-            return
-
-        def install_task():
-            success = VersionUtils.install_minecraft_version(selected_version, str(self.root_path))
-            if success:
-                self.after(0, lambda: messagebox.showinfo("成功", f"版本 {selected_version} 安装完成！"))
-                self.after(0, self._load_installed_versions_async)
-            else:
-                self.after(0, lambda: messagebox.showerror("错误", f"版本 {selected_version} 安装失败"))
-
-        threading.Thread(target=install_task, daemon=True).start()
-        messagebox.showinfo("提示", f"开始安装版本 {selected_version}，请稍候...")
-
-    def install_loader(self, loader_type):
-        """安装Fabric/Forge加载器"""
-        v = self.ver_var.get()
-        if not v or v == "暂无已安装版本":
-            messagebox.showwarning("提示", "请先安装原版游戏")
-            return
-
-        def install_task():
-            error_msg = ""
-            try:
-                import minecraft_launcher_lib as mcl
-                if loader_type == "fabric":
-                    # 使用兼容的fabric安装方式
-                    mcl.fabric.install_fabric(v, str(self.root_path))
-                elif loader_type == "forge":
-                    # 使用兼容的forge安装方式
-                    mcl.forge.install_forge(v, str(self.root_path))
-                self.after(0, lambda: messagebox.showinfo("成功", f"{loader_type}安装完成！"))
-                self.after(0, self._load_installed_versions_async)
-            except Exception as e:
-                error_msg = str(e)[:30]
-                self.after(0, lambda msg=error_msg: messagebox.showerror("错误", f"安装失败: {msg}"))
-
-        threading.Thread(target=install_task, daemon=True).start()
-        messagebox.showinfo("提示", f"开始安装{loader_type}，请稍候...")
-
-    def start_game(self):
-        """启动游戏 - 修复变量作用域问题"""
-        v = self.ver_var.get()
-        if not v or v == "暂无已安装版本":
-            messagebox.showwarning("提示", "请先安装游戏版本")
-            return
-
-        def launch_task():
-            # 定义错误信息变量，解决作用域问题
-            error_info = ""
-            try:
-                import minecraft_launcher_lib as mcl
-                # 构建启动命令
-                options = {
-                    "username": self.global_cfg["username"],
-                    "uuid": str(uuid.uuid4()),
-                    "token": "",
-                    "jvmArguments": [f"-Xmx{self.global_cfg['memory']}M"]
-                }
-                if self.global_cfg["java_path"]:
-                    options["executablePath"] = self.global_cfg["java_path"]
-
-                # 使用兼容的方法获取启动命令
-                launch_command = mcl.command.get_minecraft_command(v, str(self.root_path), options)
-                subprocess.Popen(launch_command, creationflags=subprocess.CREATE_NO_WINDOW)
-                self.after(0, lambda: messagebox.showinfo("成功", "游戏已成功启动！"))
-            except Exception as e:
-                error_info = str(e)[:30]
-                # 将错误信息作为参数传入lambda，解决作用域问题
-                self.after(0, lambda msg=error_info: messagebox.showerror("错误", f"启动失败: {msg}"))
-
-        threading.Thread(target=launch_task, daemon=True).start()
-
-    def open_mod_market(self):
-        """打开Mod市场（增加浏览器检测）"""
-        v = self.ver_var.get()
-        if not v or v == "暂无已安装版本":
-            messagebox.showwarning("提示", "请先选择有效的游戏版本")
-            return
-
-        # 前置浏览器检测
-        def check_and_open():
-            if BrowserDetector.check_ad_blocker():
-                self.after(0, lambda: BrowserDetector.show_ad_block_warning(self))
-                return
-
-            browser_info = BrowserDetector.get_browser_info()
-            if not browser_info["is_modern"] and browser_info["name"] != "unknown":
-                self.after(0, lambda: BrowserDetector.show_old_browser_warning(self, browser_info))
-                return
-
-            # 正常打开Mod市场
-            mod_dir = self.root_path / "versions" / v / "mods"
-            self.after(0, lambda: ModMarket(self, v, mod_dir))
-
-        threading.Thread(target=check_and_open, daemon=True).start()
-
-    def open_game_dir(self):
-        """打开游戏目录"""
-        v = self.ver_var.get()
-        if not v or v == "暂无已安装版本":
-            messagebox.showwarning("提示", "请先安装游戏")
-            return
-        path = self.root_path / "versions" / v
-        os.makedirs(path, exist_ok=True)
-        try:
-            if os.name == "nt":
-                os.startfile(path)
-            else:
-                subprocess.Popen(["open", path])
-        except Exception as e:
-            messagebox.showerror("错误", f"打开目录失败: {str(e)}")
-
-    def open_mod_dir(self):
-        v = self.ver_var.get()
-        if not v or v == "暂无已安装版本":
-            messagebox.showwarning("提示", "请先安装游戏")
-            return
-        path = self.root_path / "versions" / v / "mods"
-        os.makedirs(path, exist_ok=True)
-        try:
-            if os.name == "nt":
-                os.startfile(path)
-            else:
-                subprocess.Popen(["open", path])
-        except Exception as e:
-            messagebox.showerror("错误", f"打开目录失败: {str(e)}")
-
-    def change_install_dir(self):
-        new_dir = filedialog.askdirectory(title="选择新的游戏安装目录")
-        if not new_dir:
-            return
-
-        # 更新路径
-        self.root_path = Path(new_dir)
-        self.global_cfg["last_install_dir"] = new_dir
-        GlobalConfig.save(self.global_cfg)
-
-        # 更新显示
-        for widget in self.left_tabview.tab("设置").winfo_children():
-            if isinstance(widget, customtkinter.CTkScrollableFrame):
-                for frame in widget.winfo_children():
-                    if isinstance(frame, customtkinter.CTkFrame):
-                        for child in frame.winfo_children():
-                            if child.cget("text") == "系统设置":
-                                for sub_frame in frame.winfo_children():
-                                    if isinstance(sub_frame, customtkinter.CTkFrame):
-                                        for sf_child in sub_frame.winfo_children():
-                                            if sf_child.cget("text") == "安装目录":
-                                                dir_text = str(new_dir)[:25] + "..." if len(str(new_dir)) > 25 else str(
-                                                    new_dir)
-                                                for item in sub_frame.winfo_children():
-                                                    if isinstance(item, customtkinter.CTkLabel) and item != sf_child:
-                                                        item.configure(text=dir_text)
-                                                break
-                                break
-
-        messagebox.showinfo("成功", f"安装目录已切换为: {new_dir}")
-        self._load_installed_versions_async()
-
-    def choose_java(self):
-        """选择Java路径"""
-        p = filedialog.askopenfilename(filetypes=[("Java可执行文件", "java.exe"), ("所有文件", "*.*")])
-        if p:
-            self.java_edit.delete(0, "end")
-            self.java_edit.insert(0, p)
-
-    def save_all_settings(self):
-        """保存所有设置"""
-        try:
-            mem = int(self.mem_edit.get())
-            if mem < 512:
-                messagebox.showerror("错误", "内存不能小于512MB")
-                return
-
-            username = self.username_edit.get().strip()
-            if not username:
-                messagebox.showerror("错误", "玩家名不能为空")
-                return
-
-            # 更新配置
-            self.global_cfg["memory"] = mem
-            self.global_cfg["java_path"] = self.java_edit.get().strip()
-            self.global_cfg["username"] = username
-            GlobalConfig.save(self.global_cfg)
-
-            # 更新快速设置
-            self.quick_mem_edit.delete(0, "end")
-            self.quick_mem_edit.insert(0, str(mem))
-            messagebox.showinfo("成功", "所有设置已保存！")
-        except ValueError:
-            messagebox.showerror("错误", "内存必须是数字格式")
-        except Exception as e:
-            messagebox.showerror("错误", f"保存设置失败: {str(e)}")
-
-    def save_quick_settings(self):
-        """保存快速设置"""
-        try:
-            mem = int(self.quick_mem_edit.get())
-            if mem < 512:
-                messagebox.showerror("错误", "内存不能小于512MB")
-                return
-
-            self.global_cfg["memory"] = mem
-            GlobalConfig.save(self.global_cfg)
-
-            # 更新设置选项卡
-            self.mem_edit.delete(0, "end")
-            self.mem_edit.insert(0, str(mem))
-            messagebox.showinfo("成功", "快速设置已保存！")
-        except ValueError:
-            messagebox.showerror("错误", "内存必须是数字格式")
-
-# ====================== Mod市场窗口 ======================
-class ModMarket(customtkinter.CTkToplevel):
-    def __init__(self, master, game_version, mod_dir):
-        super().__init__(master)
-        self.title(f"Mod市场 - {game_version}")
-        self.geometry("700x450")
-        self.game_version = game_version
-        self.mod_dir = mod_dir
-        self.is_downloading = False
-
-        # 搜索栏
-        search_frame = customtkinter.CTkFrame(self)
-        search_frame.pack(fill="x", padx=10, pady=10)
-        self.search_entry = customtkinter.CTkEntry(search_frame, font=FONT_NORMAL, placeholder_text="输入Mod名称搜索")
-        self.search_entry.pack(side="left", fill="x", expand=True, padx=5)
-        customtkinter.CTkButton(search_frame, text="搜索", font=FONT_NORMAL, command=self.start_search).pack(
-            side="right", padx=5)
-
-        # Mod列表
-        self.mod_list_frame = customtkinter.CTkScrollableFrame(self)
-        self.mod_list_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-    def start_search(self):
-        """开始搜索Mod"""
-        keyword = self.search_entry.get().strip()
-        if not keyword:
-            messagebox.showwarning("提示", "请输入搜索关键词")
-            return
-
-        # 清空列表
-        for widget in self.mod_list_frame.winfo_children():
-            widget.destroy()
-
-        # 显示加载状态
-        customtkinter.CTkLabel(self.mod_list_frame, text="正在搜索Mod...", font=FONT_NORMAL).pack()
-
-        # 异步搜索
-        threading.Thread(target=self.search_mods, args=(keyword,), daemon=True).start()
-
-    def search_mods(self, keyword):
-        """搜索Mod核心逻辑"""
-        try:
-            response = requests.get(
-                f"{MODRINTH_API}search",
-                params={
-                    "query": keyword,
-                    "facets": f'[["versions:{self.game_version}"],["project_type:mod"]]'
-                },
-                timeout=10
-            )
-            response.raise_for_status()
-            results = response.json()["hits"]
-
-            if not results:
-                self.after(0, self._show_no_result)
-                return
-
-            for mod in results:
-                self.after(0, lambda m=mod: self.add_mod_item(m))
-
-        except Exception as e:
-            error_msg = str(e)[:30]
-            self.after(0, lambda msg=error_msg: self._show_search_error(msg))
-
-    def _show_no_result(self):
-        """显示无结果"""
-        for widget in self.mod_list_frame.winfo_children():
-            widget.destroy()
-        customtkinter.CTkLabel(self.mod_list_frame, text="未找到相关Mod", font=FONT_NORMAL, text_color="#ff6b6b").pack()
-
-    def _show_search_error(self, err_msg):
-        """显示搜索错误"""
-        for widget in self.mod_list_frame.winfo_children():
-            widget.destroy()
-        customtkinter.CTkLabel(self.mod_list_frame, text=f"搜索失败: {err_msg}", font=FONT_NORMAL,
-                               text_color="#ff6b6b").pack()
-
-    def add_mod_item(self, mod_data):
-        """添加Mod条目"""
-        # 移除加载提示
-        for widget in self.mod_list_frame.winfo_children():
-            if isinstance(widget, customtkinter.CTkLabel) and "正在搜索" in widget.cget("text"):
-                widget.destroy()
-
-        # 创建条目框架
-        item_frame = customtkinter.CTkFrame(self.mod_list_frame)
-        item_frame.pack(fill="x", pady=5, padx=5)
-
-        # Mod信息
-        info_text = f"{mod_data['title']}\n作者: {mod_data['author']}\n简介: {mod_data['description'][:40]}..."
-        customtkinter.CTkLabel(item_frame, text=info_text, font=FONT_NORMAL, justify="left").pack(side="left", padx=10,
-                                                                                                  fill="x", expand=True)
-
-        # 下载按钮
-        download_btn = customtkinter.CTkButton(item_frame, text="下载", width=70, font=FONT_NORMAL)
-        download_btn.configure(command=lambda: self.download_mod(mod_data, download_btn))
-        download_btn.pack(side="right", padx=10)
-
-    def download_mod(self, mod_data, button):
-        """下载Mod"""
-        if self.is_downloading:
-            messagebox.showwarning("提示", "已有下载任务正在进行，请等待完成")
-            return
-
-        self.is_downloading = True
-        button.configure(state="disabled", text="下载中...")
-        threading.Thread(target=self._download_mod_core, args=(mod_data, button), daemon=True).start()
-
-    def _download_mod_core(self, mod_data, button):
-        """下载Mod核心逻辑"""
-        try:
-            project_id = mod_data["project_id"]
-            response = requests.get(
-                f"{MODRINTH_API}project/{project_id}/version",
-                params={
-                    "game_versions": f'["{self.game_version}"]',
-                    "loaders": '["fabric","forge"]'
-                },
-                timeout=10
-            )
-            response.raise_for_status()
-            version_data = response.json()
-
-            if not version_data:
-                raise Exception("未找到适配版本")
-
-            # 获取下载文件
-            file_info = version_data[0]["files"][0]
-            download_url = file_info["url"]
-            file_name = file_info["filename"]
-
-            # 创建目录
-            os.makedirs(self.mod_dir, exist_ok=True)
-            save_path = self.mod_dir / file_name
-
-            # 下载文件
-            with requests.get(download_url, stream=True, timeout=10) as resp:
-                resp.raise_for_status()
-                with open(save_path, "wb") as f:
-                    for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
-                        if chunk:
-                            f.write(chunk)
-
-            self.after(0, lambda: button.configure(text="已完成", state="disabled"))
-            self.after(0, lambda: messagebox.showinfo("成功", f"Mod {file_name} 下载完成！"))
-
-        except Exception as e:
-            error_msg = str(e)[:20]
-            self.after(0, lambda msg=error_msg: button.configure(text="重试", state="normal"))
-            self.after(0, lambda msg=error_msg: messagebox.showerror("错误", f"下载失败: {msg}"))
-        finally:
-            self.is_downloading = False
-
-# ====================== 程序入口 ======================
-if __name__ == "__main__":
-    # 安装依赖
-    required_packages = ["minecraft-launcher-lib", "requests", "customtkinter"]
-    for package in required_packages:
-        try:
-            __import__(package.replace("-", "_"))
-        except ImportError:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-    # 启动程序
-    WelcomeWindow().mainloop()
+    });
+</script>
+
+</body>
+</html>
