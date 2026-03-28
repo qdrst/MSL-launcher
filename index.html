@@ -255,6 +255,135 @@
             text-decoration: underline;
         }
 
+        /* 新增友情链接样式 */
+        .friend-links {
+            margin: 20px 0;
+            padding: 15px;
+            background: var(--card);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .friend-links-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+            position: relative;
+        }
+
+        .friend-links-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .info-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--hover-bg);
+            color: var(--sub);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            cursor: pointer;
+            margin-left: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .info-icon:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .links-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .link-item {
+            padding: 6px 12px;
+            background: var(--hover-bg);
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .link-item:hover {
+            background: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        /* 自定义弹窗样式 */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-content {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 25px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            transform: translateY(-20px);
+            transition: all 0.3s ease;
+        }
+
+        .modal.active .modal-content {
+            transform: translateY(0);
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: var(--accent-light);
+        }
+
+        .modal-text {
+            font-size: 15px;
+            color: var(--text);
+            margin-bottom: 20px;
+        }
+
+        .modal-close {
+            padding: 8px 20px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            background: var(--accent-light);
+        }
+
         @media (max-width: 768px) {
             .hero h1 {
                 font-size: 36px;
@@ -264,6 +393,13 @@
             }
             .nav-actions .nav-btn {
                 padding: 8px;
+            }
+            .links-container {
+                gap: 10px;
+            }
+            .link-item {
+                padding: 5px 10px;
+                font-size: 13px;
             }
         }
     </style>
@@ -332,17 +468,41 @@
     </div>
     <div class="card">
         <h3>📶 低配流畅</h3>
-        <p>10 年前的电脑也能流畅运行，资源占用极低。</p>
+        <p>旧的电脑也能流畅运行，资源占用极低。</p>
     </div>
 </div>
 
 <footer id="about">
+    <!-- 新增友情链接板块 -->
+    <div class="friend-links">
+        <div class="friend-links-header">
+            <div class="friend-links-title">友情链接</div>
+            <div class="info-icon" id="infoIcon">?</div>
+        </div>
+        <div class="links-container">
+            <a href="https://www.java.com/zh-CN/" target="_blank" class="link-item">Java 官方网站</a>
+            <a href="https://www.minecraft.net/zh-hans" target="_blank" class="link-item">Minecraft 官网</a>
+            <a href="https://afdian.net/p/99999e6961df11ee92965254002d56986" target="_blank" class="link-item">PCL CE 官网</a>
+            <a href="https://corona.studio/lx" target="_blank" class="link-item">PCL(代理非官方)</a>
+            <a href="https://corona.studio/lx" target="_blank" class="link-item">LauncherX 官网</a>
+        </div>
+    </div>
+
     <p>QQ群：<a href="https://qm.qq.com/q/isgKpcc1A4" target="_blank">加入交流</a> | B站：<a href="https://space.bilibili.com/3493083373111319" target="_blank">关注我们</a></p>
     <br>
     MSL 启动器 © 2026 | 开源免费 | 纯个人开发
     <br>
     本软件仅用于学习交流，Minecraft 归属 Mojang Studios
 </footer>
+
+<!-- 自定义弹窗 -->
+<div class="modal" id="customModal">
+    <div class="modal-content">
+        <div class="modal-title">友情链接说明</div>
+        <div class="modal-text">将筛选过的内容上架页脚，以便快速使用</div>
+        <button class="modal-close" id="modalClose">关闭</button>
+    </div>
+</div>
 
 <script>
     const themeToggle = document.getElementById('themeToggle');
@@ -365,6 +525,41 @@
             html.style.setProperty('--sub', '#6c757d');
             html.style.setProperty('--border', '#dee2e6');
             themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+        }
+    });
+
+    // 弹窗相关功能
+    const infoIcon = document.getElementById('infoIcon');
+    const customModal = document.getElementById('customModal');
+    const modalClose = document.getElementById('modalClose');
+
+    // 打开弹窗
+    infoIcon.addEventListener('click', () => {
+        customModal.classList.add('active');
+        // 禁止背景滚动
+        document.body.style.overflow = 'hidden';
+    });
+
+    // 关闭弹窗
+    modalClose.addEventListener('click', () => {
+        customModal.classList.remove('active');
+        // 恢复背景滚动
+        document.body.style.overflow = '';
+    });
+
+    // 点击弹窗外部关闭
+    customModal.addEventListener('click', (e) => {
+        if (e.target === customModal) {
+            customModal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    });
+
+    // 按ESC键关闭弹窗
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && customModal.classList.contains('active')) {
+            customModal.classList.remove('active');
+            document.body.style.overflow = '';
         }
     });
 </script>
